@@ -64,9 +64,9 @@ class Starter_Init {
         add_option('starter_default_status', 'active');
         add_option('starter_enable_notifications', '0');
 
-        // Create or migrate database table schema
-        $db = new Starter_DB();
-        $db->create_table();
+        // Execute database schema migrations via container
+        $migration_manager = starter_container()->resolve(\STARTER\Inc\Services\Database\Migration_Manager::class);
+        $migration_manager->run_migrations();
     }
 
     /**

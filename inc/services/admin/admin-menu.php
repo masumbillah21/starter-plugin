@@ -3,6 +3,7 @@ namespace STARTER\Inc\Services\Admin;
 
 use STARTER\Inc\Contracts\Service_Interface;
 use STARTER\Inc\Services\Database\Starter_DB;
+use STARTER\Inc\Services\Database\Migration_Manager;
 
 class Admin_Menu implements Service_Interface {
 
@@ -14,11 +15,15 @@ class Admin_Menu implements Service_Interface {
     private $page_hooks = [];
 
     /**
-     * Database service dependency auto-wired by container.
+     * Services auto-wired by container.
      *
      * @param Starter_DB $db
+     * @param Migration_Manager $migration_manager
      */
-    public function __construct(private Starter_DB $db) {
+    public function __construct(
+        private Starter_DB $db,
+        private Migration_Manager $migration_manager
+    ) {
     }
 
     /**
@@ -183,6 +188,7 @@ class Admin_Menu implements Service_Interface {
             wp_die(esc_html__('You do not have permission to access this page.', 'starter'));
         }
 
+        $migration_manager = $this->migration_manager;
         include STARTER_DIR_PATH . 'templates/admin/settings.php';
     }
 }

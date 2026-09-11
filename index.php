@@ -22,6 +22,8 @@ require_once __DIR__ . '/autoloader.php';
 
 if ( ! defined('STARTER_VERSION') ) define( 'STARTER_VERSION', '1.0.0' );
 
+if ( ! defined('STARTER_DB_VERSION') ) define( 'STARTER_DB_VERSION', '1.1.0' );
+
 if ( ! defined('STARTER_DIR_PATH') ) define( 'STARTER_DIR_PATH', plugin_dir_path(__FILE__) );
 
 if ( ! defined('STARTER_PATH_URL') ) define( 'STARTER_PATH_URL', plugin_dir_url(__FILE__) );

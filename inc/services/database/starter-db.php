@@ -1,6 +1,8 @@
 <?php
 namespace STARTER\Inc\Services\Database;
 
+use STARTER\Inc\Services\Database\Migration_Manager;
+
 class Starter_DB {
 
     /**
@@ -10,7 +12,12 @@ class Starter_DB {
      */
     private $table_name;
 
-    public function __construct() {
+    /**
+     * Constructor with dependency injection.
+     *
+     * @param Migration_Manager $migration_manager
+     */
+    public function __construct(private Migration_Manager $migration_manager) {
         global $wpdb;
         $this->table_name = $wpdb->prefix . 'starter_records';
     }
@@ -25,31 +32,12 @@ class Starter_DB {
     }
 
     /**
-     * Create or update database table schema.
+     * Create or update database table schema via injected Migration_Manager.
      *
      * @return void
      */
     public function create_table(): void {
-        global $wpdb;
-
-        $charset_collate = $wpdb->get_charset_collate();
-
-        $sql = "CREATE TABLE {$this->table_name} (
-            id bigint(20) NOT NULL AUTO_INCREMENT,
-            name varchar(255) NOT NULL,
-            email varchar(255) DEFAULT '' NOT NULL,
-            status varchar(50) DEFAULT 'active' NOT NULL,
-            description text NOT NULL,
-            created_at datetime DEFAULT CURRENT_TIMESTAMP NOT NULL,
-            updated_at datetime DEFAULT CURRENT_TIMESTAMP NOT NULL,
-            PRIMARY KEY  (id),
-            KEY status (status)
-        ) $charset_collate;";
-
-        require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
-        dbDelta($sql);
-
-        update_option('starter_db_version', STARTER_VERSION);
+        $this->migration_manager->run_migrations();
     }
 
     /**

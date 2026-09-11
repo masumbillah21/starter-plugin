@@ -3,6 +3,7 @@ namespace STARTER\Inc\Services;
 
 use STARTER\Inc\Contracts\Service_Interface;
 use STARTER\Inc\Services\Container;
+use STARTER\Inc\Services\Database\Migration_Manager;
 use STARTER\Inc\Services\Database\Starter_DB;
 use STARTER\Inc\Services\Admin\Action_Links;
 use STARTER\Inc\Services\Admin\Admin_Menu;
@@ -54,6 +55,7 @@ class Service_Init extends Container {
      */
     protected function get_services(): array {
         return [
+            Migration_Manager::class,
             Starter_DB::class,
             Action_Links::class,
             Admin_Menu::class,

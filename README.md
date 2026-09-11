@@ -189,26 +189,86 @@ starter_container()->auto_bind(My_Service::class);
 
 ---
 
-### Step 6: Customizing the Database CRUD
+### Step 6: Database Migrations & Versioning System
 
-#### 1. Database Model (`inc/services/database/starter-db.php`)
-- Change the table name in `__construct()`:
-  ```php
-  $this->table_name = $wpdb->prefix . 'my_custom_table';
-  ```
-- Modify the `create_table()` method to define your schema:
-  ```php
-  $sql = "CREATE TABLE {$this->table_name} (
-      id bigint(20) NOT NULL AUTO_INCREMENT,
-      title varchar(255) NOT NULL,
-      status varchar(50) DEFAULT 'active' NOT NULL,
-      content text NOT NULL,
-      created_at datetime DEFAULT CURRENT_TIMESTAMP NOT NULL,
-      updated_at datetime DEFAULT CURRENT_TIMESTAMP NOT NULL,
-      PRIMARY KEY (id)
-  ) $charset_collate;";
-  ```
-- Use the built-in CRUD methods:
+The plugin includes an enterprise-grade schema migration manager that automatically detects when your plugin's database version changes and executes pending migrations in chronological version order.
+
+#### 1. How Migrations Work
+- Current database version is stored in `wp_options` under `starter_db_version`.
+- Target version is defined in `index.php` as `STARTER_DB_VERSION` (e.g. `'1.0.0'`, `'1.1.0'`).
+- On plugin activation or in the admin lifecycle (`admin_init`), `Migration_Manager` checks if `version_compare(installed, target, '<')`.
+- If an update is detected, it runs only the pending migrations whose version is `<= target`.
+
+#### 2. Creating a New Migration
+To evolve your database schema in a new release (e.g. version 1.2.0):
+
+1. Create a migration class in `inc/services/database/migrations/`:
+```php
+<?php
+namespace MY_PLUGIN\Inc\Services\Database\Migrations;
+
+use MY_PLUGIN\Inc\Contracts\Migration_Interface;
+
+class Add_Category_Column implements Migration_Interface {
+
+    public function get_version(): string {
+        return '1.2.0';
+    }
+
+    public function get_description(): string {
+        return 'Add category column and index to records table.';
+    }
+
+    public function up(): bool {
+        global $wpdb;
+        $table_name = $wpdb->prefix . 'starter_records';
+        $charset_collate = $wpdb->get_charset_collate();
+
+        $sql = "CREATE TABLE {$table_name} (
+            id bigint(20) NOT NULL AUTO_INCREMENT,
+            name varchar(255) NOT NULL,
+            category varchar(100) DEFAULT 'general' NOT NULL,
+            email varchar(255) DEFAULT '' NOT NULL,
+            status varchar(50) DEFAULT 'active' NOT NULL,
+            description text NOT NULL,
+            created_at datetime DEFAULT CURRENT_TIMESTAMP NOT NULL,
+            updated_at datetime DEFAULT CURRENT_TIMESTAMP NOT NULL,
+            PRIMARY KEY  (id),
+            KEY category (category)
+        ) $charset_collate;";
+
+        require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
+        dbDelta($sql);
+
+        return true;
+    }
+
+    public function down(): bool {
+        global $wpdb;
+        $table_name = $wpdb->prefix . 'starter_records';
+        $wpdb->query("ALTER TABLE {$table_name} DROP COLUMN category");
+        return true;
+    }
+}
+```
+
+2. Register the migration in `inc/services/database/migration-manager.php`:
+```php
+protected $migration_classes = [
+    Create_Records_Table::class,
+    Add_Priority_Column::class,
+    Add_Category_Column::class, // <-- Added for 1.2.0
+];
+```
+
+3. Bump the DB version in `index.php`:
+```php
+define( 'STARTER_DB_VERSION', '1.2.0' );
+```
+Upon visiting WP Admin or the Settings screen, the migration will execute automatically and record the execution history!
+
+#### 3. Database Model (`inc/services/database/starter-db.php`)
+- Built-in CRUD methods:
   - `$db->insert($data)`: Sanitized record creation.
   - `$db->get_by_id($id)`: Fetches a single record using prepared statements.
   - `$db->get_all($args)`: Fetches records with `search`, `status`, `orderby`, `order`, `per_page`, and `page`.
@@ -217,12 +277,12 @@ starter_container()->auto_bind(My_Service::class);
   - `$db->delete($id)`: Deletes a single record.
   - `$db->bulk_delete($ids)`: Deletes an array of record IDs.
 
-#### 2. CRUD Form Handler (`inc/services/crud/crud-handler.php`)
+#### 4. CRUD Form Handler (`inc/services/crud/crud-handler.php`)
 Handles `admin-post.php` requests with:
 - Nonce verification (`check_admin_referer()`)
 - Capability checks (`current_user_can('manage_options')`)
 - Sanitization (`sanitize_text_field()`, `sanitize_email()`, `sanitize_textarea_field()`)
-- Redirects with status notices (`&message=created`, `&message=updated`, `&message=deleted`)
+- Redirects with status notices (`&message=created`, `&message=updated`, `&message=deleted`, `&message=migrated`)
 
 ---
 
