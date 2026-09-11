@@ -22,26 +22,31 @@ starter-plugin/
 │       └── script.js             # Frontend scripts
 ├── inc/
 │   ├── contracts/
-│   │   └── service-interface.php # Service_Interface (register() lifecycle hook)
+│   │   ├── migration-interface.php # Migration_Interface (version, up, down contract)
+│   │   └── service-interface.php   # Service_Interface (register() lifecycle hook)
 │   ├── services/
 │   │   ├── admin/
-│   │   │   ├── action-links.php  # Plugins.php action & meta links
-│   │   │   └── admin-menu.php    # WP Admin menu & page routing
+│   │   │   ├── action-links.php    # Plugins.php action & meta links
+│   │   │   └── admin-menu.php      # WP Admin menu & page routing (injects Starter_DB & Migration_Manager)
 │   │   ├── crud/
-│   │   │   └── crud-handler.php  # CRUD request processing & validation
+│   │   │   └── crud-handler.php    # CRUD request processing & validation
 │   │   ├── database/
-│   │   │   └── starter-db.php    # Database CRUD model & migrations
-│   │   ├── container.php         # DI Container with Auto-Wiring
-│   │   └── service-init.php      # Service Bootstrapper & Auto-Binding
-│   └── starter-init.php          # Plugin lifecycle (activate, deactivate, hooks)
+│   │   │   ├── migrations/
+│   │   │   │   ├── create-records-table.php # Initial schema migration (v1.0.0)
+│   │   │   │   └── add-priority-column.php  # Schema evolution migration (v1.1.0)
+│   │   │   ├── migration-manager.php        # Schema versioning & migration runner
+│   │   │   └── starter-db.php               # Database CRUD model (injects Migration_Manager)
+│   │   ├── container.php           # DI Container with Auto-Wiring
+│   │   └── service-init.php        # Service Bootstrapper & Auto-Binding
+│   └── starter-init.php            # Plugin lifecycle (activate, deactivate, hooks)
 ├── templates/
 │   └── admin/
-│       ├── record-form.php       # Add/Edit record card form
-│       ├── records-list.php      # Data table, search, status filters, pagination
-│       └── settings.php          # Plugin settings page
-├── autoloader.php                # Class autoloader
-├── index.php                     # Plugin bootstrap entry point
-└── README.md                     # Documentation
+│       ├── record-form.php         # Add/Edit record card form
+│       ├── records-list.php        # Data table, search, status filters, pagination
+│       └── settings.php            # Settings page (Preferences & Migration UI)
+├── autoloader.php                  # Class autoloader
+├── index.php                       # Plugin bootstrap entry point
+└── README.md                       # Documentation
 ```
 
 ---
@@ -80,9 +85,10 @@ defined( 'ABSPATH' ) || exit;
 require_once __DIR__ . '/autoloader.php';
 
 // Change constant prefixes to match your plugin slug
-if ( ! defined('MY_PLUGIN_VERSION') )  define( 'MY_PLUGIN_VERSION', '1.0.0' );
-if ( ! defined('MY_PLUGIN_DIR_PATH') ) define( 'MY_PLUGIN_DIR_PATH', plugin_dir_path(__FILE__) );
-if ( ! defined('MY_PLUGIN_PATH_URL') ) define( 'MY_PLUGIN_PATH_URL', plugin_dir_url(__FILE__) );
+if ( ! defined('MY_PLUGIN_VERSION') )    define( 'MY_PLUGIN_VERSION', '1.0.0' );
+if ( ! defined('MY_PLUGIN_DB_VERSION') ) define( 'MY_PLUGIN_DB_VERSION', '1.1.0' );
+if ( ! defined('MY_PLUGIN_DIR_PATH') )   define( 'MY_PLUGIN_DIR_PATH', plugin_dir_path(__FILE__) );
+if ( ! defined('MY_PLUGIN_PATH_URL') )   define( 'MY_PLUGIN_PATH_URL', plugin_dir_url(__FILE__) );
 
 use MY_PLUGIN\Inc\Starter_Init;
 use MY_PLUGIN\Inc\Services\Service_Init;
@@ -191,16 +197,27 @@ starter_container()->auto_bind(My_Service::class);
 
 ### Step 6: Database Migrations & Versioning System
 
-The plugin includes an enterprise-grade schema migration manager that automatically detects when your plugin's database version changes and executes pending migrations in chronological version order.
+The plugin includes an enterprise-grade schema migration manager that tracks database versions, applies incremental migrations in chronological order, and enforces strict Constructor Dependency Injection.
 
 #### 1. How Migrations Work
-- Current database version is stored in `wp_options` under `starter_db_version`.
-- Target version is defined in `index.php` as `STARTER_DB_VERSION` (e.g. `'1.0.0'`, `'1.1.0'`).
-- On plugin activation or in the admin lifecycle (`admin_init`), `Migration_Manager` checks if `version_compare(installed, target, '<')`.
-- If an update is detected, it runs only the pending migrations whose version is `<= target`.
+- **Installed Version**: Stored in `wp_options` under `starter_db_version`.
+- **Target Version & Auto-Detection**: Defined in `index.php` as `STARTER_DB_VERSION` (e.g. `'1.1.0'`). `Migration_Manager::get_target_version()` automatically detects the highest version among registered migrations, ensuring no pending migration is accidentally ignored.
+- **Automatic Execution**: On plugin activation and in the admin lifecycle (`admin_init`), `Migration_Manager` checks if `version_compare(installed, target, '<')` and executes pending migrations in ascending version order.
+- **Audit History**: Every executed migration is recorded in `starter_migrations_log` with migration name, description, execution timestamp, and status.
 
-#### 2. Creating a New Migration
-To evolve your database schema in a new release (e.g. version 1.2.0):
+#### 2. Strict Dependency Injection
+`Migration_Manager` is registered as a service and auto-wired into dependent classes via constructor injection:
+- **`Starter_DB`**: Injects `Migration_Manager` to delegate table creation and schema updates:
+  ```php
+  public function __construct(private Migration_Manager $migration_manager) { ... }
+  ```
+- **`Admin_Menu`**: Injects `Migration_Manager` to provide version status and execution controls to the admin UI:
+  ```php
+  public function __construct(private Starter_DB $db, private Migration_Manager $migration_manager) { ... }
+  ```
+
+#### 3. Creating a New Migration
+To evolve your database schema in a new release (e.g. adding a new column or table for version 1.2.0):
 
 1. Create a migration class in `inc/services/database/migrations/`:
 ```php
@@ -265,9 +282,17 @@ protected $migration_classes = [
 ```php
 define( 'STARTER_DB_VERSION', '1.2.0' );
 ```
-Upon visiting WP Admin or the Settings screen, the migration will execute automatically and record the execution history!
+Upon visiting WP Admin or opening the Settings screen, the migration will execute automatically and record the execution history!
 
-#### 3. Database Model (`inc/services/database/starter-db.php`)
+#### 4. Settings Screen Migration UI
+The plugin provides a dedicated management dashboard on **Starter Plugin &rarr; Settings**:
+- **Version Metrics**: Live comparison between Installed DB Version and Target Code Version.
+- **Schema Status Badge**: Real-time indicator (`Up to date` or `Migration Required`).
+- **Run / Recheck Migrations Now**: Button to manually trigger pending migrations with nonce security.
+- **Registered Migrations Table**: Visual status (`Applied` vs `Pending`) for every migration class.
+- **Execution History Log**: Chronological audit trail of executed migrations and timestamps.
+
+#### 5. Database Model (`inc/services/database/starter-db.php`)
 - Built-in CRUD methods:
   - `$db->insert($data)`: Sanitized record creation.
   - `$db->get_by_id($id)`: Fetches a single record using prepared statements.
@@ -277,7 +302,7 @@ Upon visiting WP Admin or the Settings screen, the migration will execute automa
   - `$db->delete($id)`: Deletes a single record.
   - `$db->bulk_delete($ids)`: Deletes an array of record IDs.
 
-#### 4. CRUD Form Handler (`inc/services/crud/crud-handler.php`)
+#### 6. CRUD Form Handler (`inc/services/crud/crud-handler.php`)
 Handles `admin-post.php` requests with:
 - Nonce verification (`check_admin_referer()`)
 - Capability checks (`current_user_can('manage_options')`)
